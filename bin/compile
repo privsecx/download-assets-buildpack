@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# Usage: bin/compile BUILD_DIR CACHE_DIR ENV_DIR
+
+set -euo pipefail
+
+build_dir=$1
+env_dir=$3
+
+failed=false
+for env_var in \
+  AWS_ACCESS_KEY_ID_DEPLOY_ASSETS \
+  AWS_BUCKET_DEPLOY_ASSETS \
+  AWS_REGION_DEPLOY_ASSETS \
+  AWS_SECRET_ACCESS_KEY_DEPLOY_ASSETS \
+  ; do
+  if [[ -f "${env_dir}/${env_var}" ]]; then
+    export ${env_var}="$(cat ${env_dir}/${env_var})"
+  else
+    echo "FATAL: Expected env var not found: ${env_var}"
+    failed=true
+  fi
+done
+
+if [ $failed = true ]; then
+  exit 1
+fi
+
+export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID_DEPLOY_ASSETS
+export AWS_BUCKET=$AWS_BUCKET_DEPLOY_ASSETS
+export AWS_REGION=$AWS_REGION_DEPLOY_ASSETS
+export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY_DEPLOY_ASSETS
+export GIT_REF=$SOURCE_VERSION  # provided by heroku
+
+set -x
+
+curl --silent --show-error -o /tmp/awscli-bundle.zip "https://s3.amazonaws.com/aws-cli/awscli-bundle.zip"
+unzip -qq -d /tmp /tmp/awscli-bundle.zip
+/tmp/awscli-bundle/install -i ${build_dir}/.awscli
+rm -rf /tmp/awscli*
+
+ls -l ${build_dir}/.awscli/bin/aws
+echo $PATH
+export PATH=${build_dir}/.awscli/bin:$PATH
+
+time ${build_dir}/bin/sync-assets-from-s3
